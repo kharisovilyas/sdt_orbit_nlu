@@ -7,3 +7,4 @@ trl>=0.9.6
 fastapi>=0.111.0
 uvicorn>=0.30.0
 pyyaml>=6.0.1
+scikit-learn>=1.2.0
