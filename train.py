@@ -144,50 +144,49 @@ def main():
                 "labels": labels_encoded["input_ids"]
             }
 
-        # Конфигурация обучения
-        training_args = SFTConfig(
-            output_dir=cfg["output_dir"],
-            num_train_epochs=cfg["num_train_epochs"],
-            per_device_train_batch_size=cfg["per_device_train_batch_size"],
-            per_device_eval_batch_size=cfg["per_device_eval_batch_size"],
-            gradient_accumulation_steps=cfg["gradient_accumulation_steps"],
-            learning_rate=cfg["learning_rate"],
-            weight_decay=cfg["weight_decay"],
-            warmup_ratio=cfg["warmup_ratio"],
-            logging_steps=cfg["logging_steps"],
-            save_steps=cfg["save_steps"],
-            eval_strategy="steps" if val_data else "no",
-            eval_steps=cfg["eval_steps"] if val_data else None,
-            fp16=not load_8bit,
-            bf16=load_8bit,
-            packing=False,
-            report_to="none",
-            gradient_checkpointing=True,
-            max_seq_length=cfg["max_seq_length"],
-            dataset_num_proc=cfg.get("dataset_num_proc", 1),
-            tokenizer=tokenizer
-        )
-        # Инициализация тренера
-        trainer = SFTTrainer(
-            model=model,
-            train_dataset=train_data,
-            eval_dataset=val_data,
-            args=training_args,
-            data_collator=data_collator,
-            compute_metrics=compute_metrics if val_data else None
-        )
+    training_args = SFTConfig(
+        output_dir=cfg["output_dir"],
+        num_train_epochs=cfg["num_train_epochs"],
+        per_device_train_batch_size=cfg["per_device_train_batch_size"],
+        per_device_eval_batch_size=cfg["per_device_eval_batch_size"],
+        gradient_accumulation_steps=cfg["gradient_accumulation_steps"],
+        learning_rate=cfg["learning_rate"],
+        weight_decay=cfg["weight_decay"],
+        warmup_ratio=cfg["warmup_ratio"],
+        logging_steps=cfg["logging_steps"],
+        save_steps=cfg["save_steps"],
+        eval_strategy="steps" if val_data else "no",
+        eval_steps=cfg["eval_steps"] if val_data else None,
+        fp16=not load_8bit,
+        bf16=load_8bit,
+        packing=False,
+        report_to="none",
+        gradient_checkpointing=True,
+        dataset_num_proc=cfg.get("dataset_num_proc", 1),
+        tokenizer=tokenizer
+    )
+
+    trainer = SFTTrainer(
+        model=model,
+        train_dataset=train_data,
+        eval_dataset=val_data,
+        args=training_args,
+        data_collator=data_collator,
+        compute_metrics=compute_metrics if val_data else None,
+        max_seq_length=cfg["max_seq_length"]   # ✅ вот сюда
+    )
 
 
-        logger.info("Тренер инициализирован.")
+    logger.info("Тренер инициализирован.")
 
-        # Обучение модели
-        trainer.train()
-        logger.info("Обучение завершено.")
+    # Обучение модели
+    trainer.train()
+    logger.info("Обучение завершено.")
 
-        # Сохранение модели и токенизатора
-        trainer.model.save_pretrained(cfg["output_dir"])
-        tokenizer.save_pretrained(cfg["output_dir"])
-        logger.info(f"Модель и токенизатор сохранены в {cfg['output_dir']}")
+    # Сохранение модели и токенизатора
+    trainer.model.save_pretrained(cfg["output_dir"])
+    tokenizer.save_pretrained(cfg["output_dir"])
+    logger.info(f"Модель и токенизатор сохранены в {cfg['output_dir']}")
 
     except Exception as e:
         logger.error(f"Ошибка при обучении: {e}")
