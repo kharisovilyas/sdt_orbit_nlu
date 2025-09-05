@@ -49,7 +49,6 @@ def build_dataset(path: str, system_prompt: str, prompt_template: str, split_rat
                     ex = json.loads(line.strip())
                     data.append(format_example(ex, system_prompt, prompt_template))
 
-        # Перемешивание и разделение данных
         random.shuffle(data)
         split_idx = int(len(data) * split_ratio)
         train_data = Dataset.from_list(data[:split_idx])
@@ -141,7 +140,7 @@ def main():
                 "labels": labels_encoded["input_ids"]
             }
 
-        # Конфигурация обучения (без max_seq_length!)
+        # Конфигурация обучения (только параметры обучения)
         training_args = SFTConfig(
             output_dir=cfg["output_dir"],
             num_train_epochs=cfg["num_train_epochs"],
@@ -160,8 +159,7 @@ def main():
             packing=False,
             report_to="none",
             gradient_checkpointing=True,
-            dataset_num_proc=cfg.get("dataset_num_proc", 1),
-            tokenizer=tokenizer
+            dataset_num_proc=cfg.get("dataset_num_proc", 1)
         )
 
         # Инициализация тренера
@@ -172,7 +170,8 @@ def main():
             args=training_args,
             data_collator=data_collator,
             compute_metrics=compute_metrics if val_data else None,
-            max_seq_length=cfg["max_seq_length"]   # ✅ перенесено сюда
+            tokenizer=tokenizer,
+            max_seq_length=cfg["max_seq_length"]
         )
 
         logger.info("Тренер инициализирован.")
