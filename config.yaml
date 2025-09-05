@@ -1,11 +1,11 @@
 # Конфигурация для дообучения LLM с LoRA для маппинга русских промтов на JSON-фильтры
 # Оптимизировано для астрономических и баллистических данных малых и больших КА
 
-model_name: "meta-llama/Llama-3.1-8B-Instruct"  # Подходит для русскоязычных данных и астрономии
-load_8bit: true  # Использовать 8-битное квантование для экономии VRAM
-dataset_path: "data/prompts.jsonl"  # Путь к файлу, сгенерированному Scala-скриптом
-val_dataset_path: null  # Укажи путь, если есть отдельный валидационный файл
-split_ratio: 0.9  # Доля тренировочных данных, если val_dataset_path не указан
+model_name: "meta-llama/Llama-3.1-8B-Instruct"
+load_8bit: true
+dataset_path: "data/prompts.jsonl"
+val_dataset_path: null
+split_ratio: 0.9
 system_prompt: |
   Ты — эксперт по спутниковым системам, работающий с астрономическими и баллистическими данными. Твоя задача — анализировать запросы на русском языке о спутниках (малых и больших КА) и преобразовывать их в JSON-фильтры. Фильтры должны включать поля: coverage, altitude, orbitType, status, formFactor, mass, scale, tleDate, numberOfSatellites. Ответ должен быть строго валидным JSON без комментариев.
 prompt_template: |
@@ -19,7 +19,7 @@ num_train_epochs: 3
 per_device_train_batch_size: 4
 per_device_eval_batch_size: 4
 gradient_accumulation_steps: 4
-learning_rate: 2e-5  # Стабильное значение для сложных данных
+learning_rate: 0.00002
 weight_decay: 0.01
 warmup_ratio: 0.1
 logging_steps: 10
