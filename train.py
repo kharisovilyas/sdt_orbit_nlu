@@ -13,9 +13,9 @@ import random
 import logging
 from typing import Dict
 from datasets import Dataset
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, TrainingArguments
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-from trl import SFTTrainer, SFTConfig
+from trl import SFTTrainer
 import torch
 from sklearn.metrics import precision_score, recall_score
 
@@ -129,7 +129,7 @@ def main():
             )
 
         # Конфигурация обучения
-        training_args = SFTConfig(
+        training_args = TrainingArguments(
             output_dir=cfg["output_dir"],
             num_train_epochs=cfg["num_train_epochs"],
             per_device_train_batch_size=cfg["per_device_train_batch_size"],
@@ -140,14 +140,14 @@ def main():
             warmup_ratio=cfg["warmup_ratio"],
             logging_steps=cfg["logging_steps"],
             save_steps=cfg["save_steps"],
-            eval_strategy="steps" if val_data else "no",
+            evaluation_strategy="steps" if val_data else "no",
             eval_steps=cfg["eval_steps"] if val_data else None,
             fp16=not load_8bit,
             bf16=load_8bit,
-            packing=False,
             report_to="none",
             gradient_checkpointing=True,
-            dataset_num_proc=cfg.get("dataset_num_proc", 1),
+            max_seq_length=cfg["max_seq_length"],
+            dataloader_num_workers=cfg.get("dataset_num_proc", 1),
         )
 
         # Инициализация тренера
@@ -155,7 +155,6 @@ def main():
             model=model,
             train_dataset=train_data,
             eval_dataset=val_data,
-            max_seq_length=cfg["max_seq_length"],
             args=training_args,
             compute_metrics=compute_metrics if val_data else None
         )
