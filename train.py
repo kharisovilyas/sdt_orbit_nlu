@@ -49,13 +49,13 @@ def build_dataset(path: str, system_prompt: str, prompt_template: str, split_rat
                 if line.strip():
                     ex = json.loads(line.strip())
                     data.append(format_example(ex, system_prompt, prompt_template))
-        
+
         # Перемешивание и разделение данных
         random.shuffle(data)
         split_idx = int(len(data) * split_ratio)
         train_data = Dataset.from_list(data[:split_idx])
         val_data = Dataset.from_list(data[split_idx:]) if split_idx < len(data) else None
-        
+
         logger.info(f"Загружено {len(train_data)} тренировочных примеров и {len(val_data or [])} валидационных.")
         return train_data, val_data
     except Exception as e:
@@ -158,26 +158,26 @@ def main():
             save_steps=cfg["save_steps"],
             eval_strategy="steps" if val_data else "no",
             eval_steps=cfg["eval_steps"] if val_data else None,
-            max_seq_length=cfg["max_seq_length"],
             fp16=not load_8bit,
             bf16=load_8bit,
             packing=False,
             report_to="none",
-            gradient_checkpointing=True
+            gradient_checkpointing=True,
+            max_seq_length=cfg["max_seq_length"],
+            dataset_num_proc=cfg.get("dataset_num_proc", 1),
+            tokenizer=tokenizer
         )
-
         # Инициализация тренера
         trainer = SFTTrainer(
             model=model,
-            tokenizer=tokenizer,
             train_dataset=train_data,
             eval_dataset=val_data,
             args=training_args,
             data_collator=data_collator,
-            max_seq_length=cfg["max_seq_length"],
-            dataset_num_proc=cfg.get("dataset_num_proc", 1),
             compute_metrics=compute_metrics if val_data else None
         )
+
+
         logger.info("Тренер инициализирован.")
 
         # Обучение модели
