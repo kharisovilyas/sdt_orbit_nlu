@@ -11,8 +11,7 @@ import json
 import yaml
 import random
 import logging
-from dataclasses import dataclass
-from typing import Dict, List
+from typing import Dict
 from datasets import Dataset
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
@@ -65,8 +64,6 @@ def build_dataset(path: str, system_prompt: str, prompt_template: str, split_rat
 def compute_metrics(eval_pred):
     """Кастомная метрика для оценки качества JSON-ответов."""
     predictions, labels = eval_pred
-    # Здесь можно добавить логику для сравнения JSON-структур
-    # Для примера используем точное совпадение строк
     pred_str = [pred.decode("utf-8") for pred in predictions]
     label_str = [label.decode("utf-8") for label in labels]
     exact_matches = [1 if pred == label else 0 for pred, label in zip(pred_str, label_str)]
@@ -144,49 +141,50 @@ def main():
                 "labels": labels_encoded["input_ids"]
             }
 
-    training_args = SFTConfig(
-        output_dir=cfg["output_dir"],
-        num_train_epochs=cfg["num_train_epochs"],
-        per_device_train_batch_size=cfg["per_device_train_batch_size"],
-        per_device_eval_batch_size=cfg["per_device_eval_batch_size"],
-        gradient_accumulation_steps=cfg["gradient_accumulation_steps"],
-        learning_rate=cfg["learning_rate"],
-        weight_decay=cfg["weight_decay"],
-        warmup_ratio=cfg["warmup_ratio"],
-        logging_steps=cfg["logging_steps"],
-        save_steps=cfg["save_steps"],
-        eval_strategy="steps" if val_data else "no",
-        eval_steps=cfg["eval_steps"] if val_data else None,
-        fp16=not load_8bit,
-        bf16=load_8bit,
-        packing=False,
-        report_to="none",
-        gradient_checkpointing=True,
-        dataset_num_proc=cfg.get("dataset_num_proc", 1),
-        tokenizer=tokenizer
-    )
+        # Конфигурация обучения (без max_seq_length!)
+        training_args = SFTConfig(
+            output_dir=cfg["output_dir"],
+            num_train_epochs=cfg["num_train_epochs"],
+            per_device_train_batch_size=cfg["per_device_train_batch_size"],
+            per_device_eval_batch_size=cfg["per_device_eval_batch_size"],
+            gradient_accumulation_steps=cfg["gradient_accumulation_steps"],
+            learning_rate=cfg["learning_rate"],
+            weight_decay=cfg["weight_decay"],
+            warmup_ratio=cfg["warmup_ratio"],
+            logging_steps=cfg["logging_steps"],
+            save_steps=cfg["save_steps"],
+            eval_strategy="steps" if val_data else "no",
+            eval_steps=cfg["eval_steps"] if val_data else None,
+            fp16=not load_8bit,
+            bf16=load_8bit,
+            packing=False,
+            report_to="none",
+            gradient_checkpointing=True,
+            dataset_num_proc=cfg.get("dataset_num_proc", 1),
+            tokenizer=tokenizer
+        )
 
-    trainer = SFTTrainer(
-        model=model,
-        train_dataset=train_data,
-        eval_dataset=val_data,
-        args=training_args,
-        data_collator=data_collator,
-        compute_metrics=compute_metrics if val_data else None,
-        max_seq_length=cfg["max_seq_length"]   # ✅ вот сюда
-    )
+        # Инициализация тренера
+        trainer = SFTTrainer(
+            model=model,
+            train_dataset=train_data,
+            eval_dataset=val_data,
+            args=training_args,
+            data_collator=data_collator,
+            compute_metrics=compute_metrics if val_data else None,
+            max_seq_length=cfg["max_seq_length"]   # ✅ перенесено сюда
+        )
 
+        logger.info("Тренер инициализирован.")
 
-    logger.info("Тренер инициализирован.")
+        # Обучение модели
+        trainer.train()
+        logger.info("Обучение завершено.")
 
-    # Обучение модели
-    trainer.train()
-    logger.info("Обучение завершено.")
-
-    # Сохранение модели и токенизатора
-    trainer.model.save_pretrained(cfg["output_dir"])
-    tokenizer.save_pretrained(cfg["output_dir"])
-    logger.info(f"Модель и токенизатор сохранены в {cfg['output_dir']}")
+        # Сохранение модели и токенизатора
+        trainer.model.save_pretrained(cfg["output_dir"])
+        tokenizer.save_pretrained(cfg["output_dir"])
+        logger.info(f"Модель и токенизатор сохранены в {cfg['output_dir']}")
 
     except Exception as e:
         logger.error(f"Ошибка при обучении: {e}")
