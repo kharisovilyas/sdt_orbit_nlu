@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-Дообучение LLM с LoRA для маппинга русских промтов о спутниках на JSON-фильтры (SFT).
+Дообучение LLM с LoRA для маппинга русских промтов на JSON-фильтры (SFT).
 Оптимизировано для астрономических и баллистических данных малых и больших КА.
 Использует transformers, datasets, peft и trl (SFTTrainer).
 """
@@ -70,30 +70,6 @@ def compute_metrics(eval_pred):
     recall = recall_score(exact_matches, [1] * len(exact_matches), zero_division=0)
     return {"exact_match_precision": precision, "exact_match_recall": recall}
 
-# Кастомный data_collator
-def data_collator(features):
-    texts = [f["text"] for f in features]
-    labels = [f["labels"] for f in features]
-    inputs = tokenizer(
-        texts,
-        padding=True,
-        truncation=True,
-        max_length=cfg["max_seq_length"],
-        return_tensors="pt"
-    )
-    labels_encoded = tokenizer(
-        labels,
-        padding=True,
-        truncation=True,
-        max_length=256,
-        return_tensors="pt"
-    )
-    return {
-        "input_ids": inputs["input_ids"],
-        "attention_mask": inputs["attention_mask"],
-        "labels": labels_encoded["input_ids"]
-    }
-
 def main():
     try:
         # Загрузка конфигурации
@@ -103,13 +79,13 @@ def main():
         model_name = cfg["model_name"]
         load_8bit = cfg.get("load_8bit", False)
 
-        # Загрузка токенизатора
+        # Токенизатор
         tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
         logger.info(f"Токенизатор загружен: {model_name}")
 
-        # Конфигурация квантования
+        # Квантование
         quant_config = None
         if load_8bit:
             quant_config = BitsAndBytesConfig(
@@ -117,7 +93,7 @@ def main():
                 bnb_8bit_compute_dtype=torch.bfloat16
             )
 
-        # Загрузка модели
+        # Модель
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
             device_map="auto",
@@ -128,7 +104,7 @@ def main():
             model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
         logger.info(f"Модель загружена: {model_name}")
 
-        # Конфигурация LoRA
+        # LoRA
         lora_cfg = cfg["lora"]
         peft_config = LoraConfig(
             r=lora_cfg["r"],
@@ -140,7 +116,7 @@ def main():
         model = get_peft_model(model, peft_config)
         logger.info("LoRA-конфигурация применена.")
 
-        # Построение датасетов
+        # Датасеты
         system_prompt = cfg["system_prompt"]
         prompt_template = cfg["prompt_template"]
         val_path = cfg.get("val_dataset_path")
@@ -151,18 +127,6 @@ def main():
             train_data, val_data = build_dataset(
                 cfg["dataset_path"], system_prompt, prompt_template, cfg.get("split_ratio", 0.9)
             )
-
-        # Кастомный data_collator
-        def data_collator(features):
-            texts = [f["text"] for f in features]
-            labels = [f["labels"] for f in features]
-            inputs = tokenizer(texts, padding=True, truncation=True, max_length=cfg["max_seq_length"], return_tensors="pt")
-            labels_encoded = tokenizer(labels, padding=True, truncation=True, max_length=256, return_tensors="pt")
-            return {
-                "input_ids": inputs["input_ids"],
-                "attention_mask": inputs["attention_mask"],
-                "labels": labels_encoded["input_ids"]
-            }
 
         # Конфигурация обучения
         training_args = SFTConfig(
@@ -183,26 +147,25 @@ def main():
             packing=False,
             report_to="none",
             gradient_checkpointing=True,
-            dataset_num_proc=cfg.get("dataset_num_proc", 1)
+            dataset_num_proc=cfg.get("dataset_num_proc", 1),
         )
 
-        # Инициализация тренера — только с обязательными параметрами
+        # Инициализация тренера
         trainer = SFTTrainer(
             model=model,
             train_dataset=train_data,
             eval_dataset=val_data,
+            max_seq_length=cfg["max_seq_length"],
             args=training_args,
-            data_collator=data_collator,
             compute_metrics=compute_metrics if val_data else None
         )
-
         logger.info("Тренер инициализирован.")
 
-        # Обучение модели
+        # Обучение
         trainer.train()
         logger.info("Обучение завершено.")
 
-        # Сохранение модели и токенизатора
+        # Сохранение
         trainer.model.save_pretrained(cfg["output_dir"])
         tokenizer.save_pretrained(cfg["output_dir"])
         logger.info(f"Модель и токенизатор сохранены в {cfg['output_dir']}")
