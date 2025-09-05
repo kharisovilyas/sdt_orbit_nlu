@@ -140,7 +140,7 @@ def main():
             warmup_ratio=cfg["warmup_ratio"],
             logging_steps=cfg["logging_steps"],
             save_steps=cfg["save_steps"],
-            evaluation_strategy="steps" if val_data else "no",
+            eval_strategy="steps" if val_data else "no",
             eval_steps=cfg["eval_steps"] if val_data else None,
             fp16=not load_8bit,
             bf16=load_8bit,
