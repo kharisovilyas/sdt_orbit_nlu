@@ -25,7 +25,7 @@ warmup_ratio: 0.1
 logging_steps: 10
 save_steps: 100
 eval_steps: 100
-max_seq_length: 768  # Увеличено для сложных астрономических промтов
+model_max_length: 768
 dataset_num_proc: 4
 lora:
   r: 16
