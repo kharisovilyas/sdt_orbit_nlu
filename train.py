@@ -70,6 +70,30 @@ def compute_metrics(eval_pred):
     recall = recall_score(exact_matches, [1] * len(exact_matches), zero_division=0)
     return {"exact_match_precision": precision, "exact_match_recall": recall}
 
+# Кастомный data_collator
+def data_collator(features):
+    texts = [f["text"] for f in features]
+    labels = [f["labels"] for f in features]
+    inputs = tokenizer(
+        texts,
+        padding=True,
+        truncation=True,
+        max_length=cfg["max_seq_length"],
+        return_tensors="pt"
+    )
+    labels_encoded = tokenizer(
+        labels,
+        padding=True,
+        truncation=True,
+        max_length=256,
+        return_tensors="pt"
+    )
+    return {
+        "input_ids": inputs["input_ids"],
+        "attention_mask": inputs["attention_mask"],
+        "labels": labels_encoded["input_ids"]
+    }
+
 def main():
     try:
         # Загрузка конфигурации
@@ -140,7 +164,7 @@ def main():
                 "labels": labels_encoded["input_ids"]
             }
 
-        # Конфигурация обучения (только параметры обучения)
+        # Конфигурация обучения
         training_args = SFTConfig(
             output_dir=cfg["output_dir"],
             num_train_epochs=cfg["num_train_epochs"],
@@ -162,16 +186,14 @@ def main():
             dataset_num_proc=cfg.get("dataset_num_proc", 1)
         )
 
-        # Инициализация тренера
+        # Инициализация тренера — только с обязательными параметрами
         trainer = SFTTrainer(
             model=model,
             train_dataset=train_data,
             eval_dataset=val_data,
             args=training_args,
             data_collator=data_collator,
-            compute_metrics=compute_metrics if val_data else None,
-            tokenizer=tokenizer,
-            max_seq_length=cfg["max_seq_length"]
+            compute_metrics=compute_metrics if val_data else None
         )
 
         logger.info("Тренер инициализирован.")
