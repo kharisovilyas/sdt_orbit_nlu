@@ -140,13 +140,12 @@ def main():
             warmup_ratio=cfg["warmup_ratio"],
             logging_steps=cfg["logging_steps"],
             save_steps=cfg["save_steps"],
-            eval_strategy="steps" if val_data else "no",
+            evaluation_strategy="steps" if val_data else "no",  # тут еще маленький фикс
             eval_steps=cfg["eval_steps"] if val_data else None,
             fp16=not load_8bit,
             bf16=load_8bit,
             report_to="none",
             gradient_checkpointing=True,
-            max_seq_length=cfg["max_seq_length"],
             dataloader_num_workers=cfg.get("dataset_num_proc", 1),
         )
 
@@ -156,8 +155,12 @@ def main():
             train_dataset=train_data,
             eval_dataset=val_data,
             args=training_args,
-            compute_metrics=compute_metrics if val_data else None
+            tokenizer=tokenizer,                     # лучше явно передать токенизатор
+            compute_metrics=compute_metrics if val_data else None,
+            max_seq_length=cfg["max_seq_length"],    # <-- перенес сюда
+            dataset_text_field="text",               # нужно указать поле с текстом
         )
+
         logger.info("Тренер инициализирован.")
 
         # Обучение
