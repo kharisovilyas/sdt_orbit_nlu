@@ -144,6 +144,7 @@ def main():
             eval_steps=cfg["eval_steps"] if val_data else None,
             fp16=not load_8bit,
             bf16=load_8bit,
+            max_seq_length=cfg["max_seq_length"],
             report_to="none",
             gradient_checkpointing=True,
             dataloader_num_workers=cfg.get("dataset_num_proc", 1),
@@ -156,7 +157,6 @@ def main():
             eval_dataset=val_data,
             args=training_args,
             compute_metrics=compute_metrics if val_data else None,
-            max_seq_length=cfg["max_seq_length"],
             dataset_text_field="text",
         )
 
