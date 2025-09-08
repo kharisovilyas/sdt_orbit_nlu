@@ -23,7 +23,6 @@ try:
     assert transformers.__version__ >= "4.44.0", "Требуется transformers>=4.44.0"
     assert peft.__version__ >= "0.12.0", "Требуется peft>=0.12.0"
     assert bitsandbytes.__version__ >= "0.43.0", "Требуется bitsandbytes>=0.43.0"
-    assert pyyaml.__version__ >= "6.0.1", "Требуется pyyaml>=6.0.1"
 except ImportError as e:
     raise ImportError(f"Ошибка импорта библиотеки: {e}. Убедитесь, что установлены все зависимости.")
 except AssertionError as e:
