@@ -17,15 +17,18 @@ try:
     import transformers
     import peft
     import bitsandbytes
-    import pyyaml
+    import yaml
+    from importlib.metadata import version
+
     assert transformers.__version__ >= "4.44.0", "Требуется transformers>=4.44.0"
     assert peft.__version__ >= "0.12.0", "Требуется peft>=0.12.0"
     assert bitsandbytes.__version__ >= "0.43.0", "Требуется bitsandbytes>=0.43.0"
-    assert yaml.__version__ >= "6.0.1", "Требуется pyyaml>=6.0.1"
+    assert version("pyyaml") >= "6.0.1", f"Требуется pyyaml>=6.0.1, установлена {version('pyyaml')}"
 except ImportError as e:
     raise ImportError(f"Ошибка импорта библиотеки: {e}. Убедитесь, что установлены все зависимости.")
 except AssertionError as e:
     raise AssertionError(f"Несовместимая версия библиотеки: {e}")
+
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
