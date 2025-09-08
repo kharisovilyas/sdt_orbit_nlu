@@ -1,5 +1,4 @@
-# Конфигурация для дообучения LLM с LoRA для маппинга русских промтов на JSON-фильтры
-# Оптимизировано для астрономических и баллистических данных малых и больших КА
+# Конфигурация для дообучения LLM с LoRA, оптимизировано для GPU ~16GB
 
 model_name: "meta-llama/Llama-3.1-8B-Instruct"
 load_8bit: true
@@ -16,17 +15,21 @@ prompt_template: |
   **Ответ:**
 output_dir: "outputs/orbit-nlu-lora"
 num_train_epochs: 3
-per_device_train_batch_size: 4
-per_device_eval_batch_size: 4
-gradient_accumulation_steps: 4
+
+# ---- Параметры для 16GB GPU ----
+per_device_train_batch_size: 1
+per_device_eval_batch_size: 1
+gradient_accumulation_steps: 8
+max_seq_length: 512
+
 learning_rate: 0.00002
 weight_decay: 0.01
 warmup_ratio: 0.1
 logging_steps: 10
 save_steps: 100
 eval_steps: 100
-max_seq_length: 768
-dataset_num_proc: 4
+dataset_num_proc: 2
+
 lora:
   r: 16
   alpha: 32
