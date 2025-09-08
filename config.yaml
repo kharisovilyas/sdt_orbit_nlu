@@ -5,31 +5,35 @@ load_8bit: true
 dataset_path: "data/prompts.jsonl"
 val_dataset_path: null
 split_ratio: 0.9
+
 system_prompt: |
   Ты — эксперт по спутниковым системам, работающий с астрономическими и баллистическими данными. Твоя задача — анализировать запросы на русском языке о спутниках (малых и больших КА) и преобразовывать их в JSON-фильтры. Фильтры должны включать поля: coverage, altitude, orbitType, status, formFactor, mass, scale, tleDate, numberOfSatellites. Ответ должен быть строго валидным JSON без комментариев.
+
 prompt_template: |
   {system_prompt}
 
   **Запрос:** {user}
 
   **Ответ:**
+
 output_dir: "outputs/orbit-nlu-lora"
 num_train_epochs: 3
 
-# ---- Параметры для 16GB GPU ----
+# ---- Параметры оптимизации под 16GB GPU ----
 per_device_train_batch_size: 1
 per_device_eval_batch_size: 1
-gradient_accumulation_steps: 8
-max_seq_length: 512
+gradient_accumulation_steps: 16
+max_seq_length: 384
 
 learning_rate: 0.00002
 weight_decay: 0.01
 warmup_ratio: 0.1
 logging_steps: 10
-save_steps: 100
-eval_steps: 100
-dataset_num_proc: 2
+save_steps: 500
+eval_steps: 1000
+dataset_num_proc: 1
 
+# ---- LoRA конфигурация ----
 lora:
   r: 16
   alpha: 32
