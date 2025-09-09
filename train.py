@@ -228,7 +228,7 @@ def main():
             warmup_ratio=float(cfg.get("warmup_ratio", 0.03)),
             logging_steps=int(cfg.get("logging_steps", 10)),
             save_steps=int(cfg.get("save_steps", 500)),
-            evaluation_strategy="steps" if val_tok is not None else "no",
+            eval_strategy="steps" if val_tok is not None else "no",
             eval_steps=int(cfg.get("eval_steps", 500)) if val_tok is not None else None,
             fp16=not load_8bit,
             bf16=False,
