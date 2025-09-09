@@ -55,48 +55,82 @@ def load_cfg():
         logger.error(f"Ошибка при чтении config.yaml: {e}")
         raise
 
-def build_prompt(system_prompt, user):
-    """Формирование промта для модели."""
-    return f"{system_prompt}\n\n**Запрос:** {user}\n\n**Ответ:**"
-
-def fix_broken_json(raw: str) -> dict:
-    """
-    Исправляет сломанный JSON с множественными кавычками и извлекает корректный объект.
-    """
-    # Удаляем все лишние экранированные кавычки
-    cleaned = re.sub(r'\\"+', '"', raw)
-    
-    # Ищем начало и конец JSON объекта
-    start = cleaned.find('{')
-    end = cleaned.rfind('}') + 1
-    
-    if start == -1 or end == 0:
-        return {}
-    
-    json_str = cleaned[start:end]
-    
-    try:
-        return json.loads(json_str)
-    except json.JSONDecodeError:
-        # Если все еще невалидный JSON, пытаемся найти вложенный объект
-        try:
-            # Ищем содержимое внутри внешних кавычек
-            match = re.search(r'\"(\{.*\})\"', cleaned)
-            if match:
-                return json.loads(match.group(1))
-        except:
-            return {}
-    
-    return {}
-
 def fix_json(raw: str) -> dict:
-    """Попытка исправить некорректный JSON."""
+    """Попытка исправить некорректный JSON с агрессивной очисткой."""
     try:
         return json.loads(raw)
     except json.JSONDecodeError as e:
         logger.warning(f"Некорректный JSON: {e}. Пытаемся исправить...")
-        # Пробуем более агрессивное исправление для сломанных JSON
-        return fix_broken_json(raw)
+        
+        # Агрессивная очистка: удаляем все лишние закрывающие кавычки и скобки
+        cleaned = raw.strip()
+        
+        # Удаляем все лишние } и " после первого корректного JSON
+        first_brace = cleaned.find('{')
+        last_good_brace = cleaned.find('}', first_brace)
+        
+        if first_brace != -1 and last_good_brace != -1:
+            # Берем только до первого корректного закрытия
+            potential_json = cleaned[first_brace:last_good_brace + 1]
+            
+            # Удаляем все лишние кавычки внутри
+            potential_json = re.sub(r'\"+\s*\"+', '"', potential_json)
+            potential_json = re.sub(r'\"\s*\"', '", "', potential_json)
+            
+            try:
+                return json.loads(potential_json)
+            except json.JSONDecodeError:
+                pass
+        
+        # Альтернативный подход: ищем самый длинный валидный JSON
+        brace_count = 0
+        in_string = False
+        escape = False
+        end_index = 0
+        
+        for i, char in enumerate(cleaned):
+            if char == '"' and not escape:
+                in_string = not in_string
+            elif char == '\\' and in_string:
+                escape = not escape
+            else:
+                escape = False
+                
+            if not in_string:
+                if char == '{':
+                    brace_count += 1
+                elif char == '}':
+                    brace_count -= 1
+                    if brace_count == 0:
+                        end_index = i + 1
+                        break
+        
+        if end_index > 0:
+            try:
+                return json.loads(cleaned[:end_index])
+            except json.JSONDecodeError:
+                pass
+        
+        # Последняя попытка: ручное извлечение key-value пар
+        return extract_key_value_pairs(cleaned)
+
+def extract_key_value_pairs(text: str) -> dict:
+    """Ручное извлечение key-value пар из текста."""
+    result = {}
+    
+    # Ищем паттерны: "key": "value"
+    pattern = r'\"([^\"]+)\"\s*:\s*\"([^\"]*)\"'
+    matches = re.findall(pattern, text)
+    
+    for key, value in matches:
+        # Очищаем ключи и значения от лишних символов
+        clean_key = key.strip().strip('"').strip()
+        clean_value = value.strip().strip('"').strip()
+        
+        if clean_key and clean_value:
+            result[clean_key] = clean_value
+    
+    return result
 
 # Загрузка модели и токенизатора при старте сервера
 cfg = load_cfg()
