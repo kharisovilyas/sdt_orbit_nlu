@@ -134,6 +134,7 @@ def main():
             task_type="CAUSAL_LM"
         )
         model = get_peft_model(model, peft_config)
+        model.gradient_checkpointing_enable()
         logger.info("LoRA-конфигурация применена.")
 
         # Датасеты
@@ -172,6 +173,7 @@ def main():
             report_to="none",
             gradient_checkpointing=True,
             dataloader_num_workers=cfg.get("dataset_num_proc", 1),
+            predict_with_generate=False
         )
 
         # Инициализация тренера (без max_seq_length и dataset_text_field)
