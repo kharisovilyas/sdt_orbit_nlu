@@ -11,6 +11,7 @@ import json
 import yaml
 import torch
 import logging
+import re
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
@@ -58,21 +59,44 @@ def build_prompt(system_prompt, user):
     """Формирование промта для модели."""
     return f"{system_prompt}\n\n**Запрос:** {user}\n\n**Ответ:**"
 
+def fix_broken_json(raw: str) -> dict:
+    """
+    Исправляет сломанный JSON с множественными кавычками и извлекает корректный объект.
+    """
+    # Удаляем все лишние экранированные кавычки
+    cleaned = re.sub(r'\\"+', '"', raw)
+    
+    # Ищем начало и конец JSON объекта
+    start = cleaned.find('{')
+    end = cleaned.rfind('}') + 1
+    
+    if start == -1 or end == 0:
+        return {}
+    
+    json_str = cleaned[start:end]
+    
+    try:
+        return json.loads(json_str)
+    except json.JSONDecodeError:
+        # Если все еще невалидный JSON, пытаемся найти вложенный объект
+        try:
+            # Ищем содержимое внутри внешних кавычек
+            match = re.search(r'\"(\{.*\})\"', cleaned)
+            if match:
+                return json.loads(match.group(1))
+        except:
+            return {}
+    
+    return {}
+
 def fix_json(raw: str) -> dict:
     """Попытка исправить некорректный JSON."""
     try:
         return json.loads(raw)
     except json.JSONDecodeError as e:
         logger.warning(f"Некорректный JSON: {e}. Пытаемся исправить...")
-        start = raw.find("{")
-        end = raw.rfind("}") + 1
-        if start != -1 and end != 0:
-            try:
-                return json.loads(raw[start:end])
-            except json.JSONDecodeError:
-                logger.error("Не удалось исправить JSON.")
-                return {}
-        return {}
+        # Пробуем более агрессивное исправление для сломанных JSON
+        return fix_broken_json(raw)
 
 # Загрузка модели и токенизатора при старте сервера
 cfg = load_cfg()
