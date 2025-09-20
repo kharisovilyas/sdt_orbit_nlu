@@ -131,9 +131,12 @@ async def parse(req: ParseRequest):
             gen_ids = model.generate(
                 **inputs,
                 max_new_tokens=256,
-                do_sample=False,
-                temperature=0.0,
-                top_k=50
+                do_sample=True,
+                temperature=0.4,
+                top_p=0.9,
+                top_k=50,
+                repetition_penalty=1.2,
+                no_repeat_ngram_size=2
             )
         text = tokenizer.decode(gen_ids[0], skip_special_tokens=True)
         raw = text.split("**Ответ:**")[-1].strip()
