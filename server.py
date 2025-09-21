@@ -10,7 +10,7 @@ import time  # <<< ИЗМЕНЕНИЕ: Импортируем модуль time 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
-from peft import PeortModel
+from peft import PeftModel
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
