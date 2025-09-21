@@ -35,16 +35,11 @@ def load_cfg():
 
 def build_prompt(system_prompt, user):
     """Формирование промта для модели."""
-    # <<< ИЗМЕНЕНИЕ: Используем новый шаблон из конфига >>>
-    # Это сделано для гибкости, если вы захотите поменять структуру prompt_template
     template = cfg.get("prompt_template", "{system_prompt}\n\n**Запрос:** {user}\n\n**Ответ:**")
     return template.format(system_prompt=system_prompt, user=user)
 
 def fix_json(raw_text: str) -> dict:
-    """
-    Извлекает и парсит первый найденный JSON-объект из строки.
-    Это надежный способ, даже если модель добавляет лишний текст.
-    """
+    """Извлекает и парсит первый найденный JSON-объект из строки."""
     start_index = raw_text.find('{')
     end_index = raw_text.rfind('}')
 
@@ -60,49 +55,51 @@ def fix_json(raw_text: str) -> dict:
         logger.error(f"Ошибка декодирования JSON: {e}. Содержимое: {json_str}")
         return {}
 
-# <<< ИЗМЕНЕНИЕ: Добавлена функция для исправления "0" вместо "" >>>
 def sanitize_filters(filters: dict) -> dict:
-    """
-    Заменяет некорректные значения '0' на пустые строки.
-    Это временное решение, пока модель не будет переобучена на правильных данных.
-    """
+    """Заменяет некорректные значения '0' на пустые строки."""
     if not isinstance(filters, dict):
         return {}
-        
     sanitized = {}
     keys_to_clean = ["orbitType", "coverage", "altitude", "status", "scale", "tleDate", "formFactor"]
-    
     for key, value in filters.items():
         if key in keys_to_clean and str(value) == "0":
             sanitized[key] = ""
         else:
             sanitized[key] = value
-            
     return sanitized
 
-# Загрузка модели и токенизатора при старте сервера
+# Загрузка конфигурации
 cfg = load_cfg()
 base = cfg["model_name"]
 out = cfg["output_dir"]
+
+# Загрузка токенизатора
 tokenizer = AutoTokenizer.from_pretrained(base, use_fast=True)
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
 logger.info(f"Токенизатор загружен: {base}")
 
+# <<< ИЗМЕНЕНИЕ: Переход на 4-битную квантизацию для экономии памяти >>>
 quant = BitsAndBytesConfig(
-    load_in_8bit=cfg.get("load_8bit", True),
-    bnb_8bit_compute_dtype=torch.bfloat16
+    load_in_4bit=True,
+    bnb_4bit_use_double_quant=True,
+    bnb_4bit_quant_type="nf4",
+    bnb_4bit_compute_dtype=torch.bfloat16
 )
+
+# Загрузка модели с новой конфигурацией квантизации
 model = AutoModelForCausalLM.from_pretrained(
     base,
     device_map="auto",
     quantization_config=quant,
-    torch_dtype=torch.bfloat16
+    torch_dtype=torch.bfloat16 # torch_dtype должен быть здесь, а не в quant
 )
+
+# Загрузка LoRA адаптера
 model = PeftModel.from_pretrained(model, out)
 model.eval()
 
-# <<< КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: Предотвращает зацикливание генерации >>>
+# Ключевое исправление для стабильной генерации
 model.config.pad_token_id = tokenizer.pad_token_id
 
 logger.info(f"Модель с LoRA-адаптером загружена: {out}")
@@ -115,7 +112,6 @@ async def parse(req: ParseRequest):
         inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
         
         with torch.no_grad():
-            # <<< ИЗМЕНЕНИЕ: Используем стабильные параметры генерации без сэмплирования >>>
             gen_ids = model.generate(
                 **inputs,
                 max_new_tokens=256,
@@ -125,10 +121,7 @@ async def parse(req: ParseRequest):
         text = tokenizer.decode(gen_ids[0], skip_special_tokens=True)
         raw = text.split("**Ответ:**")[-1].strip()
         
-        # Шаг 1: Извлекаем JSON из сырого текста
         filters = fix_json(raw)
-        
-        # <<< ИЗМЕНЕНИЕ: Шаг 2: Очищаем фильтры от некорректных "0" >>>
         sanitized_filters = sanitize_filters(filters)
         
         if not sanitized_filters:
