@@ -6,10 +6,11 @@ import yaml
 import torch
 import logging
 import re
+import time  # <<< ИЗМЕНЕНИЕ: Импортируем модуль time для timestamp
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
-from peft import PeftModel
+from peft import PeortModel
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -17,11 +18,23 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Orbit-NLU Parser")
 
-class ParseRequest(BaseModel):
-    text: str
+# <<< ИЗМЕНЕНИЕ: Создаем Pydantic-модель, соответствующую вашему DtoFilters >>>
+class DtoFilters(BaseModel):
+    coverage: str = ""
+    altitude: str = ""
+    orbitType: str = ""
+    status: str = ""
+    formFactor: str = ""
+    mass: str = ""
+    scale: str = ""
+    tleDate: str = ""
+    numberOfSatellites: str = ""
 
+# <<< ИЗМЕНЕНИЕ: Обновляем модель ответа, чтобы она соответствовала DtoAIFilterResponse >>>
 class ParseResponse(BaseModel):
-    filters: dict
+    filters: DtoFilters
+    valid: bool
+    timestamp: int
     raw: str
 
 def load_cfg():
@@ -42,13 +55,10 @@ def fix_json(raw_text: str) -> dict:
     """Извлекает и парсит первый найденный JSON-объект из строки."""
     start_index = raw_text.find('{')
     end_index = raw_text.rfind('}')
-
     if start_index == -1 or end_index == -1 or end_index < start_index:
         logger.warning(f"Не удалось найти JSON-объект в строке: {raw_text}")
         return {}
-
     json_str = raw_text[start_index : end_index + 1]
-    
     try:
         return json.loads(json_str)
     except json.JSONDecodeError as e:
@@ -56,7 +66,7 @@ def fix_json(raw_text: str) -> dict:
         return {}
 
 def sanitize_filters(filters: dict) -> dict:
-    """Заменяет некорректные значения '0' на пустые строки."""
+    """Очищает и нормализует значения фильтров."""
     if not isinstance(filters, dict):
         return {}
     sanitized = {}
@@ -64,22 +74,22 @@ def sanitize_filters(filters: dict) -> dict:
     for key, value in filters.items():
         if key in keys_to_clean and str(value) == "0":
             sanitized[key] = ""
+        elif key == "status" and value == "актив":
+            sanitized[key] = "активен"
         else:
             sanitized[key] = value
     return sanitized
 
-# Загрузка конфигурации
+# Загрузка конфигурации и токенизатора
 cfg = load_cfg()
 base = cfg["model_name"]
 out = cfg["output_dir"]
-
-# Загрузка токенизатора
 tokenizer = AutoTokenizer.from_pretrained(base, use_fast=True)
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
 logger.info(f"Токенизатор загружен: {base}")
 
-# <<< ИЗМЕНЕНИЕ: Переход на 4-битную квантизацию для экономии памяти >>>
+# Конфигурация квантизации
 quant = BitsAndBytesConfig(
     load_in_4bit=True,
     bnb_4bit_use_double_quant=True,
@@ -87,21 +97,16 @@ quant = BitsAndBytesConfig(
     bnb_4bit_compute_dtype=torch.bfloat16
 )
 
-# Загрузка модели с новой конфигурацией квантизации
+# Загрузка модели
 model = AutoModelForCausalLM.from_pretrained(
     base,
     device_map="auto",
     quantization_config=quant,
-    torch_dtype=torch.bfloat16 # torch_dtype должен быть здесь, а не в quant
+    torch_dtype=torch.bfloat16
 )
-
-# Загрузка LoRA адаптера
 model = PeftModel.from_pretrained(model, out)
 model.eval()
-
-# Ключевое исправление для стабильной генерации
 model.config.pad_token_id = tokenizer.pad_token_id
-
 logger.info(f"Модель с LoRA-адаптером загружена: {out}")
 
 @app.post("/parse", response_model=ParseResponse)
@@ -115,20 +120,40 @@ async def parse(req: ParseRequest):
             gen_ids = model.generate(
                 **inputs,
                 max_new_tokens=256,
-                do_sample=False
+                do_sample=False,
+                eos_token_id=tokenizer.eos_token_id
             )
             
         text = tokenizer.decode(gen_ids[0], skip_special_tokens=True)
         raw = text.split("**Ответ:**")[-1].strip()
         
-        filters = fix_json(raw)
-        sanitized_filters = sanitize_filters(filters)
+        # <<< ИЗМЕНЕНИЕ: Логика формирования нового ответа >>>
         
-        if not sanitized_filters:
-            logger.warning("Не удалось распарсить JSON или результат пуст, возвращаем пустой словарь.")
-            
-        logger.info(f"Сгенерированные фильтры: {sanitized_filters}")
-        return {"filters": sanitized_filters, "raw": raw}
+        # 1. Парсим и очищаем фильтры, как и раньше
+        raw_filters_dict = sanitize_filters(fix_json(raw))
+        
+        # 2. Определяем, был ли парсинг успешным
+        is_valid = bool(raw_filters_dict) # True, если словарь не пустой
+
+        # 3. Создаем объект DtoFilters. Если парсинг провалился, создаем пустой объект.
+        if is_valid:
+            final_filters = DtoFilters(**raw_filters_dict)
+        else:
+            final_filters = DtoFilters() # Создаст объект с полями по умолчанию (пустые строки)
+
+        # 4. Получаем текущий timestamp
+        current_timestamp = int(time.time())
+        
+        # 5. Формируем и возвращаем финальный ответ в новой структуре
+        response_data = {
+            "filters": final_filters,
+            "valid": is_valid,
+            "timestamp": current_timestamp,
+            "raw": raw
+        }
+        
+        logger.info(f"Сгенерированный ответ: {response_data}")
+        return response_data
         
     except Exception as e:
         logger.error(f"Ошибка при обработке запроса: {e}", exc_info=True)
