@@ -11,8 +11,7 @@ from pydantic import BaseModel
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 from peft import PeftModel
 
-# ... (проверки версий и настройки логирования остаются без изменений) ...
-
+# Настройка логирования
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -36,11 +35,15 @@ def load_cfg():
 
 def build_prompt(system_prompt, user):
     """Формирование промта для модели."""
-    return f"{system_prompt}\n\n**Запрос:** {user}\n\n**Ответ:**"
+    # <<< ИЗМЕНЕНИЕ: Используем новый шаблон из конфига >>>
+    # Это сделано для гибкости, если вы захотите поменять структуру prompt_template
+    template = cfg.get("prompt_template", "{system_prompt}\n\n**Запрос:** {user}\n\n**Ответ:**")
+    return template.format(system_prompt=system_prompt, user=user)
 
 def fix_json(raw_text: str) -> dict:
     """
     Извлекает и парсит первый найденный JSON-объект из строки.
+    Это надежный способ, даже если модель добавляет лишний текст.
     """
     start_index = raw_text.find('{')
     end_index = raw_text.rfind('}')
@@ -56,6 +59,26 @@ def fix_json(raw_text: str) -> dict:
     except json.JSONDecodeError as e:
         logger.error(f"Ошибка декодирования JSON: {e}. Содержимое: {json_str}")
         return {}
+
+# <<< ИЗМЕНЕНИЕ: Добавлена функция для исправления "0" вместо "" >>>
+def sanitize_filters(filters: dict) -> dict:
+    """
+    Заменяет некорректные значения '0' на пустые строки.
+    Это временное решение, пока модель не будет переобучена на правильных данных.
+    """
+    if not isinstance(filters, dict):
+        return {}
+        
+    sanitized = {}
+    keys_to_clean = ["orbitType", "coverage", "altitude", "status", "scale", "tleDate", "formFactor"]
+    
+    for key, value in filters.items():
+        if key in keys_to_clean and str(value) == "0":
+            sanitized[key] = ""
+        else:
+            sanitized[key] = value
+            
+    return sanitized
 
 # Загрузка модели и токенизатора при старте сервера
 cfg = load_cfg()
@@ -78,6 +101,10 @@ model = AutoModelForCausalLM.from_pretrained(
 )
 model = PeftModel.from_pretrained(model, out)
 model.eval()
+
+# <<< КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: Предотвращает зацикливание генерации >>>
+model.config.pad_token_id = tokenizer.pad_token_id
+
 logger.info(f"Модель с LoRA-адаптером загружена: {out}")
 
 @app.post("/parse", response_model=ParseResponse)
@@ -88,7 +115,7 @@ async def parse(req: ParseRequest):
         inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
         
         with torch.no_grad():
-            # Используем стабильные параметры генерации
+            # <<< ИЗМЕНЕНИЕ: Используем стабильные параметры генерации без сэмплирования >>>
             gen_ids = model.generate(
                 **inputs,
                 max_new_tokens=256,
@@ -98,14 +125,17 @@ async def parse(req: ParseRequest):
         text = tokenizer.decode(gen_ids[0], skip_special_tokens=True)
         raw = text.split("**Ответ:**")[-1].strip()
         
-        # Используем улучшенную функцию парсинга
+        # Шаг 1: Извлекаем JSON из сырого текста
         filters = fix_json(raw)
         
-        if not filters:
-            logger.warning("Не удалось распарсить JSON, возвращаем пустой словарь.")
+        # <<< ИЗМЕНЕНИЕ: Шаг 2: Очищаем фильтры от некорректных "0" >>>
+        sanitized_filters = sanitize_filters(filters)
+        
+        if not sanitized_filters:
+            logger.warning("Не удалось распарсить JSON или результат пуст, возвращаем пустой словарь.")
             
-        logger.info(f"Сгенерированные фильтры: {filters}")
-        return {"filters": filters, "raw": raw}
+        logger.info(f"Сгенерированные фильтры: {sanitized_filters}")
+        return {"filters": sanitized_filters, "raw": raw}
         
     except Exception as e:
         logger.error(f"Ошибка при обработке запроса: {e}", exc_info=True)
